@@ -1,0 +1,16 @@
+{
+  "functions": {
+    "api/webhook.py": {
+      "runtime": "python3.12",
+      "maxDuration": 10
+    }
+  },
+  "env": {
+    "BOT_TOKEN": "@bot_token",
+    "ADMIN_ID": "@admin_id",
+    "MINI_APP_URL": "@mini_app_url",
+    "CHANNEL_URL": "@channel_url",
+    "WEBSITE_URL": "@website_url",
+    "SUPPORT_URL": "@support_url"
+  }
+}
