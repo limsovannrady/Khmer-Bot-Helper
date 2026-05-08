@@ -5,8 +5,10 @@ Language  : Python 3.10+
 Libraries : python-telegram-bot v21+
 """
 
+import json
 import logging
 import os
+from pathlib import Path
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -26,10 +28,35 @@ from telegram.ext import (
 # ⚙️  CONFIG — loaded from environment variables
 # ─────────────────────────────────────────────
 BOT_TOKEN    = os.environ["BOT_TOKEN"]
-MINI_APP_URL = os.environ.get("MINI_APP_URL", "https://your-mini-app.com")
+ADMIN_ID     = int(os.environ.get("ADMIN_ID", "0"))
 CHANNEL_URL  = os.environ.get("CHANNEL_URL",  "https://t.me/your_channel")
 WEBSITE_URL  = os.environ.get("WEBSITE_URL",  "https://your-website.com")
 SUPPORT_URL  = os.environ.get("SUPPORT_URL",  "https://t.me/your_support")
+
+DATA_FILE = Path(__file__).parent / "data.json"
+DEFAULT_MINI_APP_URL = os.environ.get("MINI_APP_URL", "https://your-mini-app.com")
+
+# ─────────────────────────────────────────────
+# 💾  PERSISTENT DATA (Mini App URL stored in file)
+# ─────────────────────────────────────────────
+def load_data() -> dict:
+    if DATA_FILE.exists():
+        try:
+            return json.loads(DATA_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
+def save_data(data: dict) -> None:
+    DATA_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+
+def get_mini_app_url() -> str:
+    return load_data().get("mini_app_url", DEFAULT_MINI_APP_URL)
+
+def set_mini_app_url(url: str) -> None:
+    data = load_data()
+    data["mini_app_url"] = url
+    save_data(data)
 
 # ─────────────────────────────────────────────
 # 📋 LOGGING
@@ -41,12 +68,22 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# ─────────────────────────────────────────────
+# 🔑  ADMIN CHECK
+# ─────────────────────────────────────────────
+def is_admin(user_id: int) -> bool:
+    return user_id == ADMIN_ID
+
+
+# ─────────────────────────────────────────────
+# 🎹  KEYBOARDS & TEXTS
+# ─────────────────────────────────────────────
 def main_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
         [
             InlineKeyboardButton(
                 "🚀 បើក Mini App",
-                web_app=WebAppInfo(url=MINI_APP_URL),
+                web_app=WebAppInfo(url=get_mini_app_url()),
             )
         ],
         [
@@ -83,6 +120,50 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         main_text(first_name),
         parse_mode="Markdown",
         reply_markup=main_keyboard(),
+    )
+
+
+# ══════════════════════════════════════════════
+# 🔧  /seturl — Admin: Change Mini App URL
+# ══════════════════════════════════════════════
+async def seturl(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+
+    if not is_admin(user.id):
+        await update.message.reply_text(
+            "⛔ *អ្នកមិនមានសិទ្ធិប្រើ command នេះទេ!*",
+            parse_mode="Markdown",
+        )
+        return
+
+    if not context.args:
+        current = get_mini_app_url()
+        await update.message.reply_text(
+            f"⚙️ *ផ្លាស់ប្ដូរ Mini App URL*\n\n"
+            f"🔗 URL បច្ចុប្បន្ន:\n`{current}`\n\n"
+            f"📝 ការប្រើប្រាស់:\n`/seturl https://your-new-url.com`",
+            parse_mode="Markdown",
+        )
+        return
+
+    new_url = context.args[0].strip()
+
+    if not (new_url.startswith("https://") or new_url.startswith("http://")):
+        await update.message.reply_text(
+            "❌ *URL មិនត្រឹមត្រូវ!*\n\n"
+            "URL ត្រូវតែចាប់ផ្ដើមដោយ `https://` ឬ `http://`",
+            parse_mode="Markdown",
+        )
+        return
+
+    set_mini_app_url(new_url)
+    logger.info(f"Admin {user.id} changed Mini App URL to: {new_url}")
+
+    await update.message.reply_text(
+        f"✅ *Mini App URL ត្រូវបានផ្លាស់ប្ដូររួចរាល់!*\n\n"
+        f"🔗 URL ថ្មី:\n`{new_url}`\n\n"
+        f"💡 ចុច /start ដើម្បីមើល button ថ្មី",
+        parse_mode="Markdown",
     )
 
 
@@ -130,7 +211,7 @@ async def links_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     keyboard = [
         [
             InlineKeyboardButton(
-                "🚀 Mini App", web_app=WebAppInfo(url=MINI_APP_URL)
+                "🚀 Mini App", web_app=WebAppInfo(url=get_mini_app_url())
             )
         ],
         [
@@ -188,7 +269,8 @@ def main() -> None:
 
     app = Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("start",  start))
+    app.add_handler(CommandHandler("seturl", seturl))
     app.add_handler(CallbackQueryHandler(about_callback,     pattern="^about$"))
     app.add_handler(CallbackQueryHandler(links_callback,     pattern="^links$"))
     app.add_handler(CallbackQueryHandler(back_main_callback, pattern="^back_main$"))
